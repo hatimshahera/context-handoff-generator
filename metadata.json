@@ -9,7 +9,7 @@
   "skills": ["Next.js", "React", "OpenAI API", "Prompt Engineering"],
   "category": "Developer Tools",
   "liveUrl": "",
-  "githubUrl": "",
+  "githubUrl": "https://github.com/hatimshahera/context-handoff-generator",
   "reelUrl": "",
   "writeupUrl": "",
   "lesson": "A useful AI handoff preserves decisions and constraints, not just a short summary."
