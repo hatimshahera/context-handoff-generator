@@ -1,7 +1,5 @@
 # Tool 01: Context Handoff Generator
 
-Status: in-progress
-
 ## Day
 
 01
@@ -67,7 +65,7 @@ Do not commit real API keys.
 
 ## Privacy Note
 
-This is an open-source local-first tool. Users run it with their own OpenAI API key. The v1 hosted website/demo should not ask visitors to paste API keys into the website and should not make the maintainer pay for other people's LLM usage.
+This is an open-source local-first tool. Users run it with their own OpenAI API key. A hosted demo should avoid asking visitors to paste API keys into a public website and should not make the maintainer pay for other people's LLM usage.
 
 Do not process chats containing passwords, API keys, private data, or sensitive information unless you understand the privacy implications.
 
@@ -81,6 +79,4 @@ Do not process chats containing passwords, API keys, private data, or sensitive 
 
 ## Links
 
-- Live demo: placeholder
-- GitHub/public repo: placeholder
-- Reel/social: placeholder
+- Repository: https://github.com/hatimshahera/context-handoff-generator

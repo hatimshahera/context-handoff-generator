@@ -5,12 +5,9 @@
   "slug": "context-handoff-generator",
   "repoFolder": "tool-01-context-handoff-generator",
   "description": "Generate a clean Markdown handoff file from one or more ChatGPT shared links so work can continue in Codex, Cursor, Claude, or ChatGPT.",
-  "status": "in-progress",
+  "status": "published",
   "skills": ["Next.js", "React", "OpenAI API", "Prompt Engineering"],
   "category": "Developer Tools",
-  "liveUrl": "",
   "githubUrl": "https://github.com/hatimshahera/context-handoff-generator",
-  "reelUrl": "",
-  "writeupUrl": "",
   "lesson": "A useful AI handoff preserves decisions and constraints, not just a short summary."
 }

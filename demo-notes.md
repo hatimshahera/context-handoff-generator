@@ -28,7 +28,7 @@ The demo should show a ChatGPT shared link being converted into a structured Mar
 - After state with generated Markdown preview.
 - Downloaded `context-handoff.md` opened in an editor.
 
-## Reel Hook Ideas
+## Short Demo Script
 
 - "Stop losing context when you move from ChatGPT to Codex."
 - "I built a tool that turns ChatGPT planning chats into coding briefs."
