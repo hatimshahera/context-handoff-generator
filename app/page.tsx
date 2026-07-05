@@ -29,6 +29,8 @@ function parseLinks(rawLinks: string) {
     .filter(Boolean);
 }
 
+const MAX_PUBLIC_LINKS = 2;
+
 export default function Home() {
   const [rawLinks, setRawLinks] = useState("");
   const [markdown, setMarkdown] = useState("");
@@ -42,6 +44,7 @@ export default function Home() {
 
   const linkCount = useMemo(() => parseLinks(rawLinks).length, [rawLinks]);
   const busy = isLoading || isPreviewLoading;
+  const tooManyLinks = linkCount > MAX_PUBLIC_LINKS;
 
   async function previewPrompt() {
     setError("");
@@ -53,6 +56,11 @@ export default function Home() {
     const links = parseLinks(rawLinks);
     if (links.length === 0) {
       setError("Paste at least one ChatGPT shared link.");
+      return;
+    }
+
+    if (links.length > MAX_PUBLIC_LINKS) {
+      setError(`This public demo supports up to ${MAX_PUBLIC_LINKS} links at a time.`);
       return;
     }
 
@@ -150,8 +158,11 @@ export default function Home() {
         <p className="eyebrow">Tool 01</p>
         <h1>Context Handoff Generator</h1>
         <p className="lede">
-          Paste your ChatGPT shared links, review the extracted text, then
-          generate a clean Markdown handoff for Codex, Cursor, Claude, or ChatGPT.
+          Paste your ChatGPT shared links, review the extracted text, then generate a
+          clean markdown summary of the chat.
+        </p>
+        <p className="demo-limit">
+          Public demo: up to 2 shared links and 3 generations per IP per day.
         </p>
       </header>
 
@@ -179,7 +190,7 @@ export default function Home() {
             <span className="step-num">1</span>
             <div className="step-title">
               <h2>Paste your ChatGPT links</h2>
-              <p className="step-hint">One shared link per line.</p>
+              <p className="step-hint">One shared link per line, 2 links max.</p>
             </div>
             {linksLocked ? (
               <button
@@ -206,18 +217,22 @@ export default function Home() {
                 placeholder={
                   "https://chatgpt.com/share/...\nhttps://chat.openai.com/share/..."
                 }
-                rows={7}
+                rows={4}
               />
               <div className="form-footer">
-                <span className={`link-count${linkCount > 0 ? " is-ready" : ""}`}>
+                <span
+                  className={`link-count${linkCount > 0 ? " is-ready" : ""}${
+                    tooManyLinks ? " is-over" : ""
+                  }`}
+                >
                   <span className="link-count-dot" />
-                  {linkCount} link{linkCount === 1 ? "" : "s"} ready
+                  {linkCount}/{MAX_PUBLIC_LINKS} link{linkCount === 1 ? "" : "s"} ready
                 </span>
                 <button
                   type="button"
                   className="btn-primary"
                   onClick={previewPrompt}
-                  disabled={busy}
+                  disabled={busy || tooManyLinks}
                 >
                   {isPreviewLoading ? "Previewing…" : "Preview extracted text"}
                 </button>
@@ -253,7 +268,7 @@ export default function Home() {
                 onClick={generateMarkdown}
                 disabled={busy || !promptPreview.trim()}
               >
-                {isLoading ? "Generating…" : "Generate Markdown"}
+                {isLoading ? "Generating…" : "Generate summary"}
               </button>
             </div>
           </div>
@@ -264,7 +279,7 @@ export default function Home() {
           <div className="step-head">
             <span className="step-num">3</span>
             <div className="step-title">
-              <h2>Copy your Markdown handoff</h2>
+              <h2>Copy your markdown summary</h2>
               <p className="step-hint">
                 Drop it into Codex, Cursor, Claude, or ChatGPT.
               </p>
@@ -289,7 +304,7 @@ export default function Home() {
             </div>
           </div>
           <pre className={markdown ? "" : "is-empty"}>
-            {markdown || "Your generated handoff will appear here."}
+            {markdown || "Your generated summary will appear here."}
           </pre>
         </li>
       </ol>
@@ -298,8 +313,8 @@ export default function Home() {
         <span className="privacy-icon" aria-hidden="true">
           🔒
         </span>
-        This tool is designed to run locally. Do not process chats containing
-        passwords, API keys, private data, or sensitive information.
+        Public demo traffic is limited. Do not process chats containing passwords,
+        API keys, private data, or sensitive information.
       </p>
     </main>
   );

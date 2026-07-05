@@ -3,8 +3,9 @@ export type ExtractedChat = {
   text: string;
 };
 
-export const MAX_LINKS = 6;
+export const MAX_LINKS = 2;
 const MAX_CHARS_PER_CHAT = 35000;
+export const MAX_PROMPT_CHARS = 75000;
 const CHATGPT_SHELL_MARKERS = [
   "New chat",
   "Search chats",
@@ -67,7 +68,10 @@ function looksLikeChatGptShell(text: string) {
 
 async function extractWithPlaywright(link: string) {
   const { chromium } = await import("playwright");
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({
+    headless: true,
+    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+  });
 
   try {
     const page = await browser.newPage({
@@ -143,88 +147,70 @@ export function buildPrompt(chats: ExtractedChat[]) {
     .map((chat, index) => `Chat ${index + 1}: ${chat.link}\n${chat.text}`)
     .join("\n\n---\n\n");
 
-  return `Generate one structured Markdown handoff document from these ChatGPT shared conversations.
+  return `Generate one clean Markdown context summary from these ChatGPT shared conversations.
 
-The goal is not a short summary. The goal is a deep, useful context transfer that lets the user continue in another AI tool without re-explaining their thinking, preferences, decisions, constraints, false starts, and current direction. The generated Markdown should be self-contained enough that the user can paste only this Markdown into the next chatbot and the next chatbot still understands the whole picture.
+The output must help the next AI assistant understand what the user actually wants, what has already been decided, and what should happen next. Avoid padded narration. Do not produce a generic transcript summary. Prioritize user intent, concrete facts, current state, constraints, and next actions.
 
 Rules:
 - Do not invent details.
 - If something is unclear, write "Unknown" or "Not specified".
-- Preserve user intent, decisions, constraints, rejected ideas, current direction, emotional tone, working style, and implicit priorities when they are visible in the conversation.
-- Capture nuance and intricacies. Do not flatten the conversation into generic bullets.
-- Include concrete details, names, files, technologies, constraints, acceptance criteria, and implementation choices when they appear.
-- Explain what the user was trying to achieve, what they cared about, and how their thinking evolved.
-- If the conversation includes back-and-forth refinement, show that progression instead of only the final answer.
-- Make the final "Copy-Paste Prompt" complete enough that the next AI tool can continue work without the user prompting again.
+- Start from what the user is trying to accomplish, not from what the assistant said.
+- Preserve decisions, constraints, rejected ideas, current direction, working style, and implicit priorities when they are visible in the conversation.
+- Include concrete names, files, technologies, constraints, acceptance criteria, commands, and implementation choices when they appear.
+- If the assistant gave bad, incomplete, or rejected advice, label it as rejected or uncertain instead of carrying it forward as truth.
+- Make the final "Copy-Paste Prompt" complete enough that the next AI tool can continue without the user writing another explanation.
 - Assume the next assistant will not see the original chat links. The Markdown itself must carry the context.
-- Make the output useful for continuing work in Codex, Cursor, Claude, ChatGPT, or another AI tool.
-- Keep the Markdown clean and readable.
-- Prefer thoroughness over brevity. For a substantial conversation, produce a substantial handoff.
-- Avoid filler. Every detail should help preserve context or support continuation.
+- Keep the Markdown direct, specific, and readable.
+- Avoid filler, motivational language, restating obvious facts, and long generic sections.
+- Prefer bullets over paragraphs when bullets make the information easier to scan.
 
 Required Markdown structure:
 
-# Context Handoff
+# Context Summary
 
 ## Source Chats
 
 - [Chat 1](...)
 
-## What This Was About
+## User Goal
 
-Write a clear overview of the project, problem, or discussion. Include why it mattered to the user. This section should let a new assistant orient itself without opening the source chat.
+State the user's real objective in plain language. Include why they care if it is visible.
 
-## How The Conversation Started
+## Current Ask
 
-Explain the original situation, question, or motivation.
+Explain what the user is asking for now, based on the end of the conversation.
 
-## What The User Was Thinking
+## Important Context
 
-Capture the user's goals, preferences, concerns, assumptions, constraints, taste, working style, and any implicit intent that would matter to the next AI assistant.
-
-## Conversation Timeline
-
-Summarize the conversation in order. Include the meaningful turns, changes in direction, discoveries, and refinements. This should read like useful working notes, not a tiny summary.
+List the facts, preferences, constraints, files, technologies, URLs, commands, and assumptions that matter.
 
 ## Key Decisions Made
 
-List decisions and explain the reason or tradeoff when available.
+List decisions that should be treated as settled unless the user changes direction. Include reasons or tradeoffs when known.
 
-## Important Context Not To Lose
+## Rejected Or Changed Ideas
 
-Include details another AI assistant would need to avoid making the user repeat themselves.
-
-## Things That Changed Or Were Rejected
-
-Include ideas, approaches, wording, designs, architectures, or plans that were considered and then changed, removed, or rejected.
+List approaches, wording, designs, architectures, or plans that were considered and then changed, removed, or rejected.
 
 ## Current State
 
-Explain where things stand now, including any work completed, files changed, pending work, known issues, and assumptions.
-
-## What Happened At The End
-
-Describe the final state of the conversation: the last user request, the last assistant action or answer, unresolved friction, and what the user likely expects next.
+Explain where things stand now, including work completed, files changed, pending work, known issues, and assumptions.
 
 ## Open Questions
 
-List unknowns, risks, and decisions that still need user confirmation.
+List only unknowns, risks, and decisions that still need confirmation. If none are visible, write "None specified."
 
 ## Recommended Next Steps
 
-Give concrete next actions in priority order.
+Give concrete next actions in priority order. Make them actionable, not generic.
 
 ## Copy-Paste Prompt For The Next AI Tool
 
-Write a polished, self-contained prompt in the user's voice or on the user's behalf. It should include enough context, constraints, source-chat conclusions, current state, and expected outcome that the next AI assistant can start immediately. The user should not need to add another explanatory paragraph after this.
+Write a self-contained prompt in the user's voice or on the user's behalf. It should include the goal, constraints, relevant context, current state, and expected outcome.
 
-## Compressed Conversation Notes
+## Raw Details Worth Preserving
 
-Provide a concise but still useful recap of the original conversation flow. This is the only compressed section; do not make the whole document compressed.
-
-## Raw Detail Worth Preserving
-
-Add any specific snippets, requirements, names, file paths, commands, edge cases, or implementation details that did not fit cleanly above but may matter later.
+Add only specific snippets, requirements, names, file paths, commands, edge cases, or implementation details that did not fit cleanly above but may matter later.
 
 Conversations:
 

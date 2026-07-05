@@ -22,7 +22,7 @@ export async function POST(request: Request) {
 
   if (links.length > MAX_LINKS) {
     return NextResponse.json(
-      { error: `Send ${MAX_LINKS} links or fewer for this v1 tool.` },
+      { error: `Send ${MAX_LINKS} links or fewer for this public demo.` },
       { status: 400 },
     );
   }

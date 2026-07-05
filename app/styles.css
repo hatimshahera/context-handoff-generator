@@ -1,6 +1,6 @@
 :root {
   color-scheme: light;
-  --background: #f7f5ef;
+  --background: #f6f7f4;
   --surface: #ffffff;
   --surface-muted: #faf9f5;
   --ink: #1d2433;
@@ -12,8 +12,8 @@
   --accent-soft: #e7f4f2;
   --danger: #b42318;
   --warning: #8a4b00;
-  --radius: 12px;
-  --shadow: 0 18px 50px rgba(29, 36, 51, 0.08);
+  --radius: 8px;
+  --shadow: 0 16px 44px rgba(29, 36, 51, 0.07);
 }
 
 * {
@@ -96,9 +96,9 @@ button:disabled {
 }
 
 .page-shell {
-  width: min(880px, calc(100% - 32px));
+  width: min(760px, calc(100% - 32px));
   margin: 0 auto;
-  padding: 56px 0 72px;
+  padding: 46px 0 64px;
 }
 
 .card {
@@ -110,7 +110,7 @@ button:disabled {
 
 /* Intro */
 .intro {
-  margin-bottom: 28px;
+  margin-bottom: 22px;
 }
 
 .eyebrow {
@@ -136,11 +136,24 @@ h1 {
 }
 
 .lede {
-  max-width: 680px;
+  max-width: 640px;
   color: var(--muted);
-  font-size: 1.08rem;
-  line-height: 1.6;
+  font-size: 1.02rem;
+  line-height: 1.55;
   margin: 0;
+}
+
+.demo-limit {
+  display: inline-flex;
+  margin: 14px 0 0;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 650;
+  line-height: 1.3;
 }
 
 /* Stepper */
@@ -150,16 +163,16 @@ h1 {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
 }
 
 .step {
-  padding: 22px;
+  padding: 18px;
   transition: opacity 0.2s ease;
 }
 
 .step.is-collapsed {
-  padding: 16px 22px;
+  padding: 14px 18px;
 }
 
 .step.is-locked {
@@ -169,7 +182,7 @@ h1 {
 .step-head {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
 }
 
 .step-num {
@@ -196,7 +209,7 @@ h1 {
 
 .step-title h2 {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: 1.02rem;
   letter-spacing: -0.01em;
 }
 
@@ -208,7 +221,7 @@ h1 {
 }
 
 .step-body {
-  margin-top: 16px;
+  margin-top: 14px;
 }
 
 .step-summary {
@@ -229,14 +242,14 @@ label {
 
 textarea {
   width: 100%;
-  min-height: 170px;
+  min-height: 118px;
   resize: vertical;
   border: 1px solid var(--border-strong);
   border-radius: 8px;
   background: var(--surface-muted);
   color: var(--ink);
   line-height: 1.6;
-  padding: 14px 16px;
+  padding: 12px 14px;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 0.9rem;
   transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
@@ -259,7 +272,7 @@ textarea:disabled {
 }
 
 .preview-edit {
-  min-height: 260px;
+  min-height: 230px;
   max-height: 520px;
 }
 
@@ -296,10 +309,19 @@ textarea:disabled {
   color: var(--accent-dark);
 }
 
+.link-count.is-over {
+  color: var(--danger);
+}
+
 .link-count.is-ready .link-count-dot,
 .link-count-dot.is-ready {
   background: var(--accent);
   box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.16);
+}
+
+.link-count.is-over .link-count-dot {
+  background: var(--danger);
+  box-shadow: 0 0 0 3px rgba(180, 35, 24, 0.14);
 }
 
 /* Output */
@@ -384,8 +406,12 @@ pre.is-empty {
 
 @media (max-width: 640px) {
   .page-shell {
-    width: min(100% - 24px, 880px);
+    width: min(100% - 24px, 760px);
     padding: 32px 0 48px;
+  }
+
+  .demo-limit {
+    border-radius: 8px;
   }
 
   .form-footer {

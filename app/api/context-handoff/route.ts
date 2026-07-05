@@ -1,6 +1,13 @@
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
-import { buildPrompt, extractSharedChats, MAX_LINKS, parseLinks } from "./chat";
+import {
+  buildPrompt,
+  extractSharedChats,
+  MAX_LINKS,
+  MAX_PROMPT_CHARS,
+  parseLinks,
+} from "./chat";
+import { checkGenerationLimit } from "./rate-limit";
 
 export const runtime = "nodejs";
 
@@ -33,6 +40,15 @@ export async function POST(request: Request) {
   let warnings: string[] = [];
 
   if (promptOverride) {
+    if (promptOverride.length > MAX_PROMPT_CHARS) {
+      return NextResponse.json(
+        {
+          error: `The extracted text is too long for this public demo. Keep it under ${MAX_PROMPT_CHARS.toLocaleString()} characters.`,
+        },
+        { status: 400 },
+      );
+    }
+
     userContent = promptOverride;
   } else {
     const { links, invalidLinks } = parseLinks(body);
@@ -46,7 +62,7 @@ export async function POST(request: Request) {
 
     if (links.length > MAX_LINKS) {
       return NextResponse.json(
-        { error: `Send ${MAX_LINKS} links or fewer for this v1 tool.` },
+        { error: `Send ${MAX_LINKS} links or fewer for this public demo.` },
         { status: 400 },
       );
     }
@@ -77,6 +93,17 @@ export async function POST(request: Request) {
     userContent = buildPrompt(extraction.chats);
   }
 
+  const limit = await checkGenerationLimit();
+  if (limit.limited) {
+    return NextResponse.json(
+      {
+        error:
+          "This public demo allows 3 Markdown generations per IP per day. Please try again later.",
+      },
+      { status: 429 },
+    );
+  }
+
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   let completion;
   try {
@@ -86,7 +113,7 @@ export async function POST(request: Request) {
         {
           role: "system",
           content:
-            "You turn ChatGPT conversation exports into precise Markdown context handoff documents.",
+            "You turn ChatGPT conversation exports into precise, intent-focused Markdown context summaries.",
         },
         {
           role: "user",
@@ -94,7 +121,7 @@ export async function POST(request: Request) {
         },
       ],
       temperature: 0.2,
-      max_tokens: 5000,
+      max_tokens: 3000,
     });
   } catch (error) {
     return NextResponse.json(
