@@ -67,12 +67,19 @@ function looksLikeChatGptShell(text: string) {
 }
 
 async function extractWithPlaywright(link: string) {
-  process.env.PLAYWRIGHT_BROWSERS_PATH ??= "0";
   const { chromium } = await import("playwright");
-  const browser = await chromium.launch({
-    headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
-  });
+  const isServerless = process.env.VERCEL === "1";
+  const launchOptions = isServerless
+    ? await import("@sparticuz/chromium").then(async ({ default: serverlessChromium }) => ({
+        args: serverlessChromium.args,
+        executablePath: await serverlessChromium.executablePath(),
+        headless: true,
+      }))
+    : {
+        headless: true,
+        args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      };
+  const browser = await chromium.launch(launchOptions);
 
   try {
     const page = await browser.newPage({

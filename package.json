@@ -4,13 +4,13 @@
   "private": true,
   "license": "MIT",
   "scripts": {
-    "postinstall": "PLAYWRIGHT_BROWSERS_PATH=0 playwright install chromium",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@sparticuz/chromium": "^149.0.0",
     "next": "^15.0.0",
     "openai": "^4.75.0",
     "playwright": "^1.61.1",
