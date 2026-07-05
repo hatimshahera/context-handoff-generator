@@ -30,8 +30,8 @@ The current direction is:
 2. Summarize the actual discussion, not just answer a fixed checklist.
 3. Preserve the conversation arc: what the user wanted, how the discussion changed, what was decided, what broke, what was fixed, and where things ended.
 4. Let the user preview the exact text that will be sent to the LLM before generation.
-5. Use Playwright browser extraction because ChatGPT shared pages are rendered client-side.
-6. Reject logged-out ChatGPT shell text instead of treating it as real conversation content.
+5. Extract the conversation from the share page's server-embedded state (the JSON ChatGPT serializes into the HTML), not from rendered DOM text and not from a headless browser.
+6. Reject empty or shell-only results instead of treating them as real conversation content.
 7. Make the output useful as a standalone context file for another AI assistant.
 
 This changed the product from a basic "summary generator" into a local-first context transfer tool.
@@ -42,17 +42,19 @@ The useful part of a handoff tool is not only summarization. It needs to preserv
 
 I also learned that the extraction layer matters as much as the LLM prompt. If the backend sends the wrong source text to the model, the generated Markdown cannot be good no matter how strong the prompt is.
 
-The better pattern for this version is:
+The biggest single lesson was about where the data actually lives. "We tried a plain HTTP request and it only returned page chrome" turned out to be misleading. A plain HTTP request does return the full conversation — but it is embedded in the HTML as serialized application state (ChatGPT ships it inside `window.__reactRouterContext`), not as visible rendered text. The early attempt read the *visible* DOM text from the static HTML and correctly found only shell. It never parsed the *serialized state* sitting in a `<script>` tag on the very same response. Those are two completely different things, and confusing them sent the project down a browser-automation detour.
 
-1. Open the shared conversation in a headless browser.
-2. Detect whether the extracted text is actually conversation content or just ChatGPT page chrome.
-3. Extract rendered user/assistant messages from the page DOM.
+The pattern that actually works for this version is:
+
+1. Fetch the shared link with a normal HTTP request (no browser).
+2. Pull ChatGPT's serialized conversation state out of the HTML.
+3. Dereference that state into the ordered list of user and assistant messages.
 4. Show the extracted prompt text to the user before generation.
 5. Generate the handoff from the same text the user previewed.
 
 ## What Was Harder Than Expected
 
-Shared ChatGPT pages can be difficult to parse reliably because their structure may change and some content may be rendered client-side.
+Shared ChatGPT pages are harder to parse than they look, but not for the reason I first assumed. The trap was believing the content was unavailable to a plain request; in reality it was available but hidden inside serialized page state rather than visible text. The real fragility is that this embedded-state format is an internal ChatGPT detail that can change without notice, so the parser has to fail loudly rather than silently produce a bad summary.
 
 The biggest product issue was output quality. A short summary is not enough if the user wants to move from ChatGPT into Codex, Cursor, Claude, or another tool. The handoff needs to capture the user's full mental model: what they wanted, what they disliked, what changed, what was rejected, what was decided, and what should happen next.
 
@@ -75,25 +77,31 @@ The next product correction was adding a prompt preview step. The user should be
 
 The preview step exposed another important failure mode: the first server-side extraction approach did not receive the conversation at all. It only received ChatGPT page shell text like "New chat", "Search chats", "Log in", and the Terms/Privacy notice. The tool now rejects that kind of shell text instead of pretending it is valid source material.
 
-The next correction was using Playwright as the extraction engine. A plain HTTP request is fast, cheap, and easy to run, but it only sees the static HTML returned by the server. Playwright opens the shared link in a real headless browser, waits for the client-rendered page, and extracts message text from the rendered DOM. On the failed UK visa shared-chat example, this changed the result from useless page chrome to the actual conversation between the user and assistant.
+At that point I drew the wrong conclusion. Seeing only shell text from the "plain HTTP" attempt, I assumed the conversation must be rendered entirely client-side and therefore only reachable through a real browser. So the next correction was to switch the extraction engine to Playwright: open the shared link in a headless Chromium, wait for the page to render, and read the message text out of the DOM. On the first failing example this did work — the preview stopped showing login-page noise and started showing the real conversation — which made it feel like the right answer.
 
-The tradeoff is that Playwright is heavier and more fragile. It requires a browser binary (`npx playwright install chromium`), can be slower, may be harder to deploy on some serverless hosts, and can still break if ChatGPT changes its DOM or blocks automation. But for this tool, it is a reasonable experiment because the whole challenge is about using AI and automation to make useful tools, while documenting the limitations honestly.
+Playwright then created a second, deployment-shaped problem. A headless browser needs a browser binary, which is fine locally (`npx playwright install chromium`) but painful on serverless. I had to add `@sparticuz/chromium`, special-case the launch options for Vercel, and wire up `outputFileTracingIncludes` so the binary shipped with the function. That is the "Fix Playwright browser install for Vercel" work. It was a lot of moving parts to make a browser boot inside a 1-second-cold-start serverless function.
 
-The most important product moment was taking one step back. I had added a more complicated multi-chunk parsing approach, but it made the tool feel worse and still did not solve the real failure. Rolling back that path made the problem visible again: the issue was not summarization depth first, it was bad extraction. Once the tool showed the exact text being sent to ChatGPT, the failure became obvious. After that, Playwright was the right next experiment because it attacked the actual bottleneck. This made the tool feel much better: the preview stopped showing login-page noise and started showing the real conversation.
+Then the approach failed again anyway. On another shared link the tool went right back to "Only ChatGPT page chrome was found." That was the important clue: if a *real browser* also only gets the shell, the problem was never "the page is client-rendered." ChatGPT bot-challenges the headless browser and serves it the logged-out shell, while at the same time serving the full conversation to a plain request — just not as visible text.
 
-The main lesson from all of this: for an AI tool, "it calls the model" is not enough. The tool has to protect the user's context. It has to make the invisible backend work understandable, especially when the work takes time, fails, or depends on messy external pages.
+The breakthrough was re-reading the raw HTML from a plain `curl`, not the rendered DOM. The entire conversation is right there in the response, serialized into a `<script>` tag as `window.__reactRouterContext` (a "turbo-stream" flat table where every value is stored once and referenced by index). The earlier "plain HTTP" attempt had this exact data in hand and threw it away, because it only looked at visible text. Parsing that serialized state — fetch the HTML, pull the stream table, dereference it, read `linear_conversation` — reconstructs every user and assistant turn with no browser at all. The link that had been failing extracted cleanly on the first try.
+
+So Playwright and `@sparticuz/chromium` came back out completely. The final extractor is a plain `fetch` plus a small dereferencer. It is faster, cheaper, has zero binary dependencies, deploys anywhere, and — the part that matters most — it actually works on the links the browser could not handle.
+
+The most important product moment was taking one step back. Earlier I had added a more complicated multi-chunk parsing approach that made the tool feel worse and did not solve the real failure; rolling it back made the real problem — bad extraction — visible again. The same instinct applied to Playwright: it was a plausible fix that treated the symptom (no visible text) instead of the cause (I was reading the wrong part of the response). "We already tried plain HTTP" was true but incomplete — we tried reading the visible text over HTTP, never the embedded state. Distinguishing those two is what unblocked the whole tool.
+
+The main lesson from all of this: for an AI tool, "it calls the model" is not enough. The tool has to protect the user's context, and getting the source material right can mean looking harder at data you already have instead of reaching for a heavier tool. It also has to make the invisible backend work understandable, especially when the work takes time, fails, or depends on messy external pages.
 
 The product lesson is that users do not want a technically valid summary. They want continuity. If the generated Markdown still forces them to re-prompt, re-explain, or correct the next assistant, then the tool has failed its purpose.
 
 ## What I Would Improve
 
-I improved the backend to make extraction more honest. It now uses Playwright browser extraction, detects obvious ChatGPT shell text, and only sends real rendered conversation text to the summarizer.
+I improved the backend to make extraction more honest. It now fetches the share page over plain HTTP, parses ChatGPT's embedded conversation state, sends only real user/assistant turns to the summarizer, and reports a clear warning when a link cannot be parsed instead of silently summarizing shell text.
 
 I would still improve the tool with:
 
-- Better extraction tests against saved fixtures from real shared chats.
+- Better extraction tests against saved fixtures from real shared chats, so a future ChatGPT format change is caught immediately.
+- A fallback parser if ChatGPT changes its serialized-state format again (the embedded-state shape is not a stable public contract).
 - Optional manual transcript paste when a shared link cannot be opened.
-- A visible "browser extraction mode" indicator so the user understands why preview can take longer.
 - Cost/time estimates before processing very large chats.
 - A setting for output depth: concise, detailed, or exhaustive.
 
@@ -102,7 +110,8 @@ I would still improve the tool with:
 - Next.js API routes
 - React form state
 - Frontend error handling
-- Playwright browser automation
+- Reverse-engineering and parsing embedded page state (React Router turbo-stream)
+- Reading raw responses instead of trusting rendered output when debugging extraction
 - LLM prompt design
 - Markdown generation
 

@@ -6,13 +6,14 @@ export type ExtractedChat = {
 export const MAX_LINKS = 2;
 const MAX_CHARS_PER_CHAT = 35000;
 export const MAX_PROMPT_CHARS = 75000;
-const CHATGPT_SHELL_MARKERS = [
-  "New chat",
-  "Search chats",
-  "Log in",
-  "Sign up for free",
-  "ChatGPT is AI.",
-];
+
+const BROWSER_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+
+// Roles that carry conversation content worth handing off. ChatGPT tool/system
+// turns are mostly hidden plumbing (redacted plugin output, hidden context), so
+// we keep the human-facing turns.
+const KEEP_ROLES = new Set(["user", "assistant"]);
 
 export function parseLinks(value: unknown) {
   const links = Array.isArray((value as { links?: unknown }).links)
@@ -36,100 +37,188 @@ function isChatGptShareLink(link: string) {
   }
 }
 
-function decodeHtmlEntities(value: string) {
-  return value
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'");
-}
-
 function cleanWhitespace(value: string) {
-  return decodeHtmlEntities(value)
+  return value
     .replace(/\r/g, "")
     .replace(/[ \t]+/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
-function looksLikeChatGptShell(text: string) {
-  const markerCount = CHATGPT_SHELL_MARKERS.filter((marker) =>
-    text.includes(marker),
-  ).length;
-  const hasConversationMarkers =
-    text.includes("data-message-author-role") ||
-    text.includes("You said:") ||
-    text.includes("ChatGPT said:");
+// ---------------------------------------------------------------------------
+// Extraction
+//
+// ChatGPT share pages server-render the full conversation into the HTML inside
+// React Router's `window.__reactRouterContext.streamController` payload. That
+// payload is a "turbo-stream" flat table: one JSON array where every value is
+// stored once and referenced by its index. We fetch the HTML (no browser), pull
+// that table out, dereference it into a normal object graph, then read the
+// `linear_conversation` node list. A plain fetch is what a headless browser is
+// NOT: it is not bot-challenged into the logged-out app shell.
+// ---------------------------------------------------------------------------
 
-  return markerCount >= 3 && !hasConversationMarkers;
-}
+async function fetchShareHtml(link: string) {
+  const response = await fetch(link, {
+    headers: {
+      "user-agent": BROWSER_UA,
+      accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "accept-language": "en-US,en;q=0.9",
+    },
+    redirect: "follow",
+  });
 
-async function extractWithPlaywright(link: string) {
-  const { chromium } = await import("playwright");
-  const isServerless = process.env.VERCEL === "1";
-  const launchOptions = isServerless
-    ? await import("@sparticuz/chromium").then(async ({ default: serverlessChromium }) => ({
-        args: serverlessChromium.args,
-        executablePath: await serverlessChromium.executablePath(),
-        headless: true,
-      }))
-    : {
-        headless: true,
-        args: ["--no-sandbox", "--disable-setuid-sandbox"],
-      };
-  const browser = await chromium.launch(launchOptions);
-
-  try {
-    const page = await browser.newPage({
-      userAgent:
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-    });
-
-    await page.goto(link, { waitUntil: "domcontentloaded", timeout: 30000 });
-    await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
-    await page.waitForTimeout(2500);
-
-    const roleTexts = await page
-      .locator("[data-message-author-role]")
-      .evaluateAll((nodes) =>
-        nodes
-          .map((node) => {
-            const role = node.getAttribute("data-message-author-role") ?? "message";
-            const text = (node.textContent ?? "").trim();
-            return text ? `${role}:\n${text}` : "";
-          })
-          .filter(Boolean),
-      )
-      .catch(() => []);
-
-    const renderedText =
-      roleTexts.length > 0
-        ? roleTexts.join("\n\n")
-        : await page.locator("body").innerText({ timeout: 5000 });
-
-    return cleanWhitespace(renderedText).slice(0, MAX_CHARS_PER_CHAT);
-  } finally {
-    await browser.close();
-  }
-}
-
-export async function extractSharedChat(link: string): Promise<ExtractedChat> {
-  const renderedText = await extractWithPlaywright(link);
-  if (renderedText.length >= 120 && !looksLikeChatGptShell(renderedText)) {
-    return { link, text: renderedText };
-  }
-
-  if (renderedText.length < 120) {
+  if (!response.ok) {
     throw new Error(
-      "No readable conversation text was found. The link may be private, deleted, restricted, or the page structure may have changed.",
+      `The share page returned HTTP ${response.status}. The link may be private, deleted, or restricted.`,
     );
   }
 
-  throw new Error(
-    "Only ChatGPT page chrome was found. The shared conversation may not be exposed to logged-out browser extraction.",
-  );
+  return response.text();
+}
+
+function extractStreamTable(html: string): unknown[] {
+  const re =
+    /window\.__reactRouterContext\.streamController\.enqueue\("((?:[^"\\]|\\.)*)"\)/g;
+  const chunks: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(html))) {
+    // Each capture is the inside of a JS string literal; decode the escapes.
+    chunks.push(JSON.parse(`"${match[1]}"`));
+  }
+
+  if (chunks.length === 0) {
+    throw new Error(
+      "The conversation data was not found in the share page. ChatGPT may have changed its page format, or the link is not a public shared conversation.",
+    );
+  }
+
+  // The stream is newline-delimited JSON values; the first line is the flat
+  // table of every referenced value. (JSON escapes real newlines, so splitting
+  // on "\n" never cuts through a string.)
+  const firstLine = chunks.join("").split("\n")[0];
+  const table = JSON.parse(firstLine);
+  if (!Array.isArray(table)) {
+    throw new Error("Unexpected share-page data format.");
+  }
+  return table;
+}
+
+// Resolve a turbo-stream flat table into a normal object graph. A row can be a
+// literal (string/bool/null), a number (reference to another row), an array of
+// references, or an object whose keys `_<n>` reference the key string at row n.
+function makeDeref(rows: unknown[]) {
+  const cache = new Map<number, unknown>();
+
+  function deref(ref: unknown, seen: Set<number>): unknown {
+    if (typeof ref !== "number") return ref;
+    if (ref < 0) return null; // turbo-stream sentinel (undefined / hole)
+    if (seen.has(ref)) return null; // cycle guard
+    if (cache.has(ref)) return cache.get(ref);
+
+    const row = rows[ref];
+    const next = new Set(seen).add(ref);
+    let out: unknown;
+
+    if (row === null || typeof row === "string" || typeof row === "boolean") {
+      out = row;
+    } else if (typeof row === "number") {
+      out = deref(row, next);
+    } else if (Array.isArray(row)) {
+      out = row.map((item) => deref(item, next));
+    } else if (row && typeof row === "object") {
+      const obj: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(row)) {
+        const resolvedKey = key.startsWith("_")
+          ? String(deref(Number(key.slice(1)), next))
+          : key;
+        obj[resolvedKey] = deref(value, next);
+      }
+      out = obj;
+    } else {
+      out = row;
+    }
+
+    cache.set(ref, out);
+    return out;
+  }
+
+  return (ref: unknown) => deref(ref, new Set<number>());
+}
+
+function findKeyDeep(value: unknown, key: string, depth = 0): unknown {
+  if (!value || typeof value !== "object" || depth > 14) return undefined;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findKeyDeep(item, key, depth + 1);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  if (key in record) return record[key];
+  for (const child of Object.values(record)) {
+    const found = findKeyDeep(child, key, depth + 1);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+function partsToText(parts: unknown): string {
+  if (!Array.isArray(parts)) return "";
+  return parts
+    .map((part) => {
+      if (typeof part === "string") return part;
+      if (part && typeof part === "object" && typeof (part as { text?: unknown }).text === "string") {
+        return (part as { text: string }).text;
+      }
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+}
+
+function conversationToText(linear: unknown): string {
+  if (!Array.isArray(linear)) return "";
+
+  const turns: string[] = [];
+  for (const node of linear) {
+    const message = (node as { message?: unknown })?.message as
+      | Record<string, unknown>
+      | undefined;
+    if (!message) continue;
+
+    const role = (message.author as { role?: string } | undefined)?.role;
+    if (!role || !KEEP_ROLES.has(role)) continue;
+
+    const metadata = message.metadata as
+      | { is_visually_hidden_from_conversation?: boolean }
+      | undefined;
+    if (metadata?.is_visually_hidden_from_conversation) continue;
+
+    const text = partsToText((message.content as { parts?: unknown } | undefined)?.parts);
+    if (!text) continue;
+
+    turns.push(`${role}:\n${text}`);
+  }
+
+  return turns.join("\n\n");
+}
+
+export async function extractSharedChat(link: string): Promise<ExtractedChat> {
+  const html = await fetchShareHtml(link);
+  const table = extractStreamTable(html);
+  const root = makeDeref(table)(0);
+  const linear = findKeyDeep(root, "linear_conversation");
+  const text = cleanWhitespace(conversationToText(linear)).slice(0, MAX_CHARS_PER_CHAT);
+
+  if (text.length < 40) {
+    throw new Error(
+      "No readable conversation text was found. The link may be private, deleted, empty, or restricted.",
+    );
+  }
+
+  return { link, text };
 }
 
 export async function extractSharedChats(links: string[]) {

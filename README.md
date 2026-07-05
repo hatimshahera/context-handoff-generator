@@ -18,7 +18,7 @@ Ideas often start in ChatGPT and then move into coding tools. A shared ChatGPT l
 - Validate `https://chatgpt.com/share/...` and `https://chat.openai.com/share/...` links.
 - Generate one combined `context-handoff.md` document.
 - Preview the exact extracted prompt text before sending it to OpenAI.
-- Use Playwright browser extraction to read the rendered shared conversation.
+- Extract the conversation from the share page's embedded state over a plain HTTP request (no browser).
 - Preserve user intent, conversation timeline, decisions, rejected ideas, current state, and what happened at the end.
 - Produce a self-contained copy-paste prompt for the next AI tool.
 - Preview, copy, and download the Markdown.
@@ -31,13 +31,12 @@ Ideas often start in ChatGPT and then move into coding tools. A shared ChatGPT l
 - Next.js App Router
 - React
 - OpenAI API
-- Playwright browser extraction for rendered ChatGPT shared pages
+- Plain HTTP fetch plus embedded-state parsing (ChatGPT's React Router stream payload)
 
 ## How To Run Locally
 
 ```bash
 npm install
-npx playwright install chromium
 cp .env.example .env.local
 npm run dev
 ```
@@ -74,7 +73,7 @@ Do not process chats containing passwords, API keys, private data, or sensitive 
 - Shared ChatGPT links must be accessible.
 - Shared links may only include the conversation up to the point where the link was created.
 - Some links may fail if they are private, deleted, workspace-restricted, or if the page structure changes.
-- Playwright improves extraction for client-rendered ChatGPT pages, but it is heavier than a plain HTTP request and can still fail if ChatGPT blocks automation, changes the DOM, or does not expose the shared chat to a logged-out browser.
+- Extraction reads ChatGPT's embedded conversation state, which is an internal format that can change without notice; if it does, the tool reports the link as unparseable rather than guessing.
 - This v1 intentionally avoids accounts, storage, payments, background jobs, and browser extensions.
 
 ## Links
