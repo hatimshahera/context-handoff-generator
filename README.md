@@ -79,3 +79,7 @@ Do not process chats containing passwords, API keys, private data, or sensitive 
 ## Links
 
 - Repository: https://github.com/hatimshahera/context-handoff-generator
+
+## Support Me
+
+If this helped you, you can support my work here: [buymeacoffee.com/hatimshahera](https://buymeacoffee.com/hatimshahera)
